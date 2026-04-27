@@ -341,6 +341,13 @@ input:focus { border-color: var(--neon); box-shadow: 0 0 10px rgba(0,245,196,0.1
       </div>
       <button class="btn btn-sm btn-secondary" id="btnEditSession" onclick="editSession()" style="display:none">MODIFIER</button>
     </div>
+    <!-- Quick actions when session exists -->
+    <div id="sessionQuickActions" style="display:none; flex-direction:column; gap:10px; margin-top:14px;">
+      <button class="btn btn-primary" id="btnQuickGame" onclick="goTab('game')" style="display:none">🎮 AJOUTER UNE PARTIE</button>
+      <button class="btn btn-secondary" style="margin-top:0" onclick="goTab('history')">☰ VOIR LES PARTIES</button>
+      <button class="btn btn-secondary" style="margin-top:0" onclick="goTab('leaderboard')">🏆 CLASSEMENT</button>
+      <button class="btn btn-secondary" style="margin-top:0" onclick="goTab('stats')">📊 STATS</button>
+    </div>
   </div>
   <div id="sessionForm">
     <div class="viewer-notice" id="viewerNotice" style="display:none">
@@ -416,12 +423,6 @@ const ADMIN_PASSWORD = "cissac"; // ← change si tu veux
 const TEAMS = [
   { id:'blue',   name:'Bleu',   color:'#2563eb' },
   { id:'red',    name:'Rouge',  color:'#dc2626' },
-  { id:'green',  name:'Vert',   color:'#16a34a' },
-  { id:'orange', name:'Orange', color:'#ea580c' },
-  { id:'violet', name:'Violet', color:'#7c3aed' },
-  { id:'yellow', name:'Jaune',  color:'#ca8a04' },
-  { id:'cyan',   name:'Cyan',   color:'#0891b2' },
-  { id:'pink',   name:'Rose',   color:'#db2777' },
 ];
 
 // ─── STATE ─────────────────────────────────────────────────────
@@ -544,14 +545,19 @@ function updateHeaderSub() {
 
 function initSessionUI() {
   const has = !!session;
+  // Banner always visible when session exists
   document.getElementById('sessionBanner').style.display = has ? 'block' : 'none';
-  document.getElementById('sessionForm').style.display   = (has && !isAdmin) ? 'none' : 'block';
+  // Form hidden by default when session exists (admin can open it via MODIFIER)
+  document.getElementById('sessionForm').style.display = has ? 'none' : 'block';
   document.getElementById('viewerNotice').style.display  = (!isAdmin && !has) ? 'block' : 'none';
   document.getElementById('btnEditSession').style.display = isAdmin ? 'inline-block' : 'none';
   document.getElementById('btnSaveSession').style.display = isAdmin ? 'block' : 'none';
   document.getElementById('btnClearSession').style.display = (isAdmin && has) ? 'block' : 'none';
   document.getElementById('addPlayerRow').style.display  = isAdmin ? 'flex' : 'none';
   document.querySelectorAll('#view-session input').forEach(i => i.readOnly = !isAdmin);
+  // Quick action buttons (go to game / history)
+  document.getElementById('sessionQuickActions').style.display = has ? 'flex' : 'none';
+  document.getElementById('btnQuickGame').style.display = (has && isAdmin) ? 'block' : 'none';
   if (has) {
     document.getElementById('bannerName').textContent    = session.name;
     document.getElementById('bannerPlayers').textContent = session.players.join(' · ');
@@ -562,6 +568,7 @@ function initSessionUI() {
 
 window.editSession = () => {
   document.getElementById('sessionForm').style.display = 'block';
+  document.getElementById('sessionQuickActions').style.display = 'none';
 };
 
 function renderEditingPlayers() {
