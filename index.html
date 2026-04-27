@@ -201,6 +201,10 @@ input:focus { border-color: var(--neon); box-shadow: 0 0 10px rgba(0,245,196,0.1
 .gc-num { font-family: 'Orbitron', sans-serif; font-size: 10px; letter-spacing: 2px; color: var(--dim2); }
 .gc-del { background: none; border: none; color: var(--dim); font-size: 16px; cursor: pointer; padding: 2px 6px; }
 .gc-del:active { color: var(--red); }
+.gc-edit { background: none; border: none; color: var(--dim2); font-size: 14px; cursor: pointer; padding: 2px 6px; }
+.gc-edit:active { color: var(--neon); }
+.edit-banner { background: rgba(0,245,196,0.07); border: 1px solid rgba(0,245,196,0.3); border-radius: 5px; padding: 10px 14px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 10px; color: var(--neon); letter-spacing: 1px; }
+.edit-banner-label { font-family: 'Orbitron', sans-serif; font-size: 9px; letter-spacing: 2px; }
 .gc-player-row { display: flex; align-items: center; padding: 8px 14px; border-bottom: 1px solid rgba(0,245,196,0.05); gap: 8px; }
 .gc-player-row:last-child { border-bottom: none; }
 .gc-pname { flex: 1; font-size: 12px; }
@@ -363,7 +367,8 @@ input:focus { border-color: var(--neon); box-shadow: 0 0 10px rgba(0,245,196,0.1
 
 <!-- NEW GAME -->
 <div class="view" id="view-game">
-  <div class="stitle">// NOUVELLE PARTIE</div>
+  <div id="gameEditBanner"></div>
+  <div class="stitle" id="gameFormTitle">// NOUVELLE PARTIE</div>
   <div class="step-indicator" id="stepIndicator"></div>
   <div class="player-nav">
     <button class="pnav-btn" onclick="prevPlayer()">← PRÉC</button>
@@ -372,7 +377,7 @@ input:focus { border-color: var(--neon); box-shadow: 0 0 10px rgba(0,245,196,0.1
   </div>
   <div id="playerEntryArea"></div>
   <div class="sep"></div>
-  <button class="btn btn-primary" onclick="saveGame()">⊕ ENREGISTRER LA PARTIE</button>
+  <button class="btn btn-primary" id="btnSaveGame" onclick="saveGame()">⊕ ENREGISTRER LA PARTIE</button>
 </div>
 
 <!-- HISTORY -->
@@ -431,6 +436,7 @@ let currentPlayerIdx = 0;
 let gameEntries = [];
 let editingPlayers = [];
 let unsubSession = null, unsubGames = null;
+let editingGameId = null; // null = new game, string = editing existing game id
 
 // ─── SYNC INDICATOR ────────────────────────────────────────────
 function setSyncStatus(s) {
@@ -610,6 +616,7 @@ window.clearSession = async () => {
 // ─── GAME FORM ─────────────────────────────────────────────────
 function resetGameForm() {
   currentPlayerIdx = 0;
+  editingGameId = null;
   gameEntries = session
     ? session.players.map(() => ({ team:'blue', result:'win', frags:0, assists:0, deaths:0, flags:0 }))
     : [];
@@ -618,6 +625,16 @@ function resetGameForm() {
 function renderGameForm() {
   if (!session || !isAdmin) return;
   if (gameEntries.length !== session.players.length) resetGameForm();
+  // Edit banner
+  const bannerHtml = editingGameId
+    ? `<div class="edit-banner">
+        <div><div class="edit-banner-label">✏️ MODE ÉDITION</div><div style="margin-top:3px;color:var(--dim2)">Modifie les stats puis sauvegarde</div></div>
+        <button class="btn btn-sm btn-secondary" style="margin:0" onclick="cancelEdit()">ANNULER</button>
+      </div>`
+    : '';
+  document.getElementById('gameEditBanner').innerHTML = bannerHtml;
+  document.getElementById('gameFormTitle').textContent = editingGameId ? '// ÉDITER LA PARTIE' : '// NOUVELLE PARTIE';
+  document.getElementById('btnSaveGame').textContent = editingGameId ? '✓ METTRE À JOUR LA PARTIE' : '⊕ ENREGISTRER LA PARTIE';
   // Step indicator
   document.getElementById('stepIndicator').innerHTML =
     session.players.map((_,i) =>
@@ -649,14 +666,14 @@ function renderGameForm() {
           <div class="mini-result-btn loss ${e.result==='loss'?'active':''}" onclick="selectResultForCurrent('loss')">✗ DÉFAITE</div>
         </div>
         <div class="pec-stats">
+          <div class="pec-stat"><label>SCORE 🚩</label>
+            <input type="number" min="0" value="${e.flags}" inputmode="numeric" oninput="setVal('flags',this.value)"></div>
           <div class="pec-stat"><label>FRAGS</label>
             <input type="number" min="0" value="${e.frags}" inputmode="numeric" oninput="setVal('frags',this.value)"></div>
           <div class="pec-stat"><label>ASSIST.</label>
             <input type="number" min="0" value="${e.assists}" inputmode="numeric" oninput="setVal('assists',this.value)"></div>
           <div class="pec-stat"><label>DÉCÈS</label>
             <input type="number" min="0" value="${e.deaths}" inputmode="numeric" oninput="setVal('deaths',this.value)"></div>
-          <div class="pec-stat"><label>FLAGS 🚩</label>
-            <input type="number" min="0" value="${e.flags}" inputmode="numeric" oninput="setVal('flags',this.value)"></div>
         </div>
       </div>
     </div>`;
@@ -680,18 +697,53 @@ window.nextPlayer = () => { if (currentPlayerIdx<session.players.length-1) { cur
 window.saveGame = async () => {
   if (!isAdmin) return;
   const now = new Date();
-  const game = {
-    timestamp: now.getTime(),
-    time: now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
-    date: now.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}),
-    entries: session.players.map((name,i) => ({ player:name, ...gameEntries[i] }))
-  };
+  const entries = session.players.map((name,i) => ({ player:name, ...gameEntries[i] }));
   setSyncStatus('syncing');
   try {
-    await addDoc(collection(db,'halo','session','games'), game);
-    resetGameForm(); showToast('PARTIE ENREGISTRÉE ✓');
+    if (editingGameId) {
+      // Update existing game — preserve original timestamp/date/time
+      const original = games.find(g => g.id === editingGameId);
+      await setDoc(doc(db,'halo','session','games',editingGameId), {
+        timestamp: original.timestamp,
+        time: original.time,
+        date: original.date,
+        entries
+      });
+      showToast('PARTIE MISE À JOUR ✓');
+    } else {
+      // Create new game
+      await addDoc(collection(db,'halo','session','games'), {
+        timestamp: now.getTime(),
+        time: now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
+        date: now.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}),
+        entries
+      });
+      showToast('PARTIE ENREGISTRÉE ✓');
+    }
+    resetGameForm();
     setTimeout(() => goTab('history'), 600);
   } catch { setSyncStatus('error'); showToast('ERREUR FIREBASE', true); }
+};
+
+window.editGame = id => {
+  if (!isAdmin) return;
+  const game = games.find(g => g.id === id);
+  if (!game) return;
+  editingGameId = id;
+  currentPlayerIdx = 0;
+  // Pre-fill gameEntries from the existing game, maintaining session player order
+  gameEntries = session.players.map(name => {
+    const entry = game.entries.find(e => e.player === name);
+    return entry
+      ? { team: entry.team, result: entry.result, frags: entry.frags, assists: entry.assists, deaths: entry.deaths, flags: entry.flags }
+      : { team:'blue', result:'win', frags:0, assists:0, deaths:0, flags:0 };
+  });
+  goTab('game');
+};
+
+window.cancelEdit = () => {
+  resetGameForm();
+  renderGameForm();
 };
 
 // ─── HISTORY ───────────────────────────────────────────────────
@@ -706,14 +758,21 @@ function renderHistory() {
     html += `<div class="game-card">
       <div class="gc-header">
         <div class="gc-num">PARTIE ${num} — ${g.date} ${g.time}</div>
-        ${isAdmin?`<button class="gc-del" onclick="deleteGame('${g.id}')">✕</button>`:''}
+        ${isAdmin?`<div style="display:flex;gap:2px">
+          <button class="gc-edit" onclick="editGame('${g.id}')" title="Éditer">✏️</button>
+          <button class="gc-del" onclick="deleteGame('${g.id}')" title="Supprimer">✕</button>
+        </div>`:''}
       </div>`;
-    g.entries.forEach(e => {
+    // Sort entries by performance: score desc, frags desc, assists desc, deaths asc
+    const sorted = [...g.entries].sort((a,b) =>
+      b.flags - a.flags || b.frags - a.frags || b.assists - a.assists || a.deaths - b.deaths
+    );
+    sorted.forEach(e => {
       const team = TEAMS.find(t=>t.id===e.team);
       html += `<div class="gc-player-row">
         <div class="color-dot" style="background:${team?.color}"></div>
         <div class="gc-pname">${e.player}</div>
-        <div class="gc-stats-mini"><b>${e.frags}</b>K&nbsp;<b>${e.assists}</b>A&nbsp;<b>${e.deaths}</b>D&nbsp;<b>${e.flags}</b>🚩</div>
+        <div class="gc-stats-mini"><b>${e.flags}</b>Sc&nbsp;<b>${e.frags}</b>K&nbsp;<b>${e.assists}</b>A&nbsp;<b>${e.deaths}</b>D</div>
         <div class="gc-result ${e.result}">${e.result==='win'?'V':'D'}</div>
       </div>`;
     });
@@ -794,10 +853,10 @@ function renderLeaderboard() {
       </div>
       <div class="lb-winrate-bar"><div class="lb-winrate-fill" style="width:${wr}%"></div></div>
       <div class="lb-stats">
+        <div class="lb-stat"><div class="lb-stat-val" style="color:var(--gold)">${p.flags}</div><div class="lb-stat-lbl">SCORE</div><div class="lb-stat-avg">~${(p.flags/p.games).toFixed(1)}/p</div></div>
         <div class="lb-stat"><div class="lb-stat-val" style="color:var(--neon)">${p.frags}</div><div class="lb-stat-lbl">FRAGS</div><div class="lb-stat-avg">~${(p.frags/p.games).toFixed(1)}/p</div></div>
         <div class="lb-stat"><div class="lb-stat-val" style="color:var(--neon2)">${p.assists}</div><div class="lb-stat-lbl">ASSIST.</div><div class="lb-stat-avg">~${(p.assists/p.games).toFixed(1)}/p</div></div>
         <div class="lb-stat"><div class="lb-stat-val" style="color:var(--red)">${p.deaths}</div><div class="lb-stat-lbl">DÉCÈS</div><div class="lb-stat-avg">~${(p.deaths/p.games).toFixed(1)}/p</div></div>
-        <div class="lb-stat"><div class="lb-stat-val" style="color:var(--gold)">${p.flags}</div><div class="lb-stat-lbl">FLAGS</div><div class="lb-stat-avg">~${(p.flags/p.games).toFixed(1)}/p</div></div>
         <div class="lb-stat"><div class="lb-stat-val" style="color:${wr>=50?'var(--neon)':'var(--red)'}">${wr}%</div><div class="lb-stat-lbl">WIN RATE</div><div class="lb-stat-avg">${p.wins}V/${p.games-p.wins}D</div></div>
       </div>
     </div>`;
@@ -947,10 +1006,10 @@ function renderStats() {
         <div style="font-family:'Orbitron',sans-serif;font-size:11px;color:var(--neon)">${kd} K/D</div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);padding:10px 14px;gap:8px;text-align:center">
+        <div><div style="font-family:'Orbitron',sans-serif;font-size:17px;color:var(--gold)">${p.flags}</div><div style="font-size:8px;color:var(--dim2)">SCORE</div><div style="font-size:9px;color:var(--dim2)">${(p.flags/p.games).toFixed(1)}/p</div></div>
         <div><div style="font-family:'Orbitron',sans-serif;font-size:17px;color:var(--neon)">${p.frags}</div><div style="font-size:8px;color:var(--dim2)">FRAGS</div><div style="font-size:9px;color:var(--dim2)">${(p.frags/p.games).toFixed(1)}/p</div></div>
         <div><div style="font-family:'Orbitron',sans-serif;font-size:17px;color:var(--neon2)">${p.assists}</div><div style="font-size:8px;color:var(--dim2)">ASSIST.</div><div style="font-size:9px;color:var(--dim2)">${(p.assists/p.games).toFixed(1)}/p</div></div>
         <div><div style="font-family:'Orbitron',sans-serif;font-size:17px;color:var(--red)">${p.deaths}</div><div style="font-size:8px;color:var(--dim2)">DÉCÈS</div><div style="font-size:9px;color:var(--dim2)">${(p.deaths/p.games).toFixed(1)}/p</div></div>
-        <div><div style="font-family:'Orbitron',sans-serif;font-size:17px;color:var(--gold)">${p.flags}</div><div style="font-size:8px;color:var(--dim2)">FLAGS</div><div style="font-size:9px;color:var(--dim2)">${(p.flags/p.games).toFixed(1)}/p</div></div>
         <div><div style="font-family:'Orbitron',sans-serif;font-size:17px;color:${wr>=50?'var(--neon)':'var(--red)'}">${wr}%</div><div style="font-size:8px;color:var(--dim2)">WIN RATE</div><div style="font-size:9px;color:var(--dim2)">${p.wins}V/${p.games-p.wins}D</div></div>
         <div><div style="font-family:'Orbitron',sans-serif;font-size:17px;color:var(--purple)">${p.bestFrags}</div><div style="font-size:8px;color:var(--dim2)">RECORD</div><div style="font-size:9px;color:var(--dim2)">best game</div></div>
       </div>
