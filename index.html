@@ -339,11 +339,13 @@ input:focus { border-color: var(--neon); box-shadow: 0 0 10px rgba(0,245,196,0.1
         <div class="session-banner-name" id="bannerName"></div>
         <div class="session-banner-players" id="bannerPlayers"></div>
       </div>
-      <button class="btn btn-sm btn-secondary" id="btnEditSession" onclick="editSession()" style="display:none">MODIFIER</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+        <button class="btn btn-sm btn-primary" id="btnQuickGame" onclick="goTab('game')" style="display:none;margin:0">🎮 PARTIE</button>
+        <button class="btn btn-sm btn-secondary" id="btnEditSession" onclick="editSession()" style="display:none;margin:0">MODIFIER</button>
+      </div>
     </div>
-    <!-- Quick actions when session exists -->
+    <!-- Quick nav links for viewers -->
     <div id="sessionQuickActions" style="display:none; flex-direction:column; gap:10px; margin-top:14px;">
-      <button class="btn btn-primary" id="btnQuickGame" onclick="goTab('game')" style="display:none">🎮 AJOUTER UNE PARTIE</button>
       <button class="btn btn-secondary" style="margin-top:0" onclick="goTab('history')">☰ VOIR LES PARTIES</button>
       <button class="btn btn-secondary" style="margin-top:0" onclick="goTab('leaderboard')">🏆 CLASSEMENT</button>
       <button class="btn btn-secondary" style="margin-top:0" onclick="goTab('stats')">📊 STATS</button>
@@ -418,7 +420,7 @@ const firebaseConfig = {
   messagingSenderId: "771605125657",
   appId: "1:771605125657:web:e7c9f3870ef713b6a1a888"
 };
-const ADMIN_PASSWORD = "cissac"; // ← change si tu veux
+const ADMIN_PASSWORD = "cissac";
 
 const TEAMS = [
   { id:'blue',   name:'Bleu',   color:'#2563eb' },
@@ -557,7 +559,7 @@ function initSessionUI() {
   document.querySelectorAll('#view-session input').forEach(i => i.readOnly = !isAdmin);
   // Quick action buttons (go to game / history)
   document.getElementById('sessionQuickActions').style.display = has ? 'flex' : 'none';
-  document.getElementById('btnQuickGame').style.display = (has && isAdmin) ? 'block' : 'none';
+  document.getElementById('btnQuickGame').style.display = (has && isAdmin) ? 'inline-block' : 'none';
   if (has) {
     document.getElementById('bannerName').textContent    = session.name;
     document.getElementById('bannerPlayers').textContent = session.players.join(' · ');
@@ -760,6 +762,7 @@ function renderHistory() {
     el.innerHTML = `<div class="empty"><div class="empty-icon">🎮</div><div class="empty-text">AUCUNE PARTIE</div></div>`; return;
   }
   let html = `<div class="stitle">// ${games.length} PARTIE${games.length>1?'S':''}</div>`;
+  if (isAdmin) html += `<button class="btn btn-primary" onclick="goTab('game')" style="margin-bottom:16px">🎮 AJOUTER UNE PARTIE</button>`;
   [...games].reverse().forEach((g,ri) => {
     const num = games.length - ri;
     html += `<div class="game-card">
